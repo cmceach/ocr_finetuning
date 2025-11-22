@@ -1,0 +1,16 @@
+# Recognition Model Configuration
+architecture: crnn_vgg16_bn  # Options: crnn_vgg16_bn, sar_resnet31, master
+pretrained: true
+vocab_size: null  # Auto-detect from dataset
+batch_size: 16
+learning_rate: 0.001
+epochs: 100
+optimizer: adamw
+scheduler: cosine
+weight_decay: 0.0001
+save_checkpoint_every: 10
+early_stopping:
+  enabled: true
+  patience: 20
+  min_delta: 0.001
+

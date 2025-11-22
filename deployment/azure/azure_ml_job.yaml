@@ -1,0 +1,30 @@
+# Azure ML Training Job Definition
+# This is a template - adjust based on your Azure ML setup
+
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+
+command: >
+  python -m src.training.train_full_pipeline
+  --config config/default_config.yaml
+  --client-config config/client_configs/example_client.yaml
+
+code: .
+environment: azureml:ocr-training-env:1
+compute: azureml:your-compute-cluster
+
+inputs:
+  train_data:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/train_data
+  val_data:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/val_data
+
+outputs:
+  model:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/models
+
+resources:
+  instance_count: 1
+

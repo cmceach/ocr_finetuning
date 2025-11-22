@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+always use the ocr_finetuning conda environment when installing packages and running code

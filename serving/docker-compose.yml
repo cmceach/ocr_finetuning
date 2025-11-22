@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  ocr-server:
+    build:
+      context: ..
+      dockerfile: serving/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_VERSION=1.0.0
+      - AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=${AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT}
+      - AZURE_DOCUMENT_INTELLIGENCE_KEY=${AZURE_DOCUMENT_INTELLIGENCE_KEY}
+    volumes:
+      - ../trained_models:/app/trained_models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+

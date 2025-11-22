@@ -1,0 +1,21 @@
+# Azure Deployment Configuration
+resource_group: your-resource-group
+location: eastus
+container_registry:
+  name: your-registry-name
+  resource_group: your-registry-resource-group
+
+container_instance:
+  name: ocr-inference
+  cpu: 2
+  memory_gb: 4
+  ports:
+    - 8000
+
+environment_variables:
+  MODEL_VERSION: "1.0.0"
+
+secure_environment_variables:
+  AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: null  # Set via environment
+  AZURE_DOCUMENT_INTELLIGENCE_KEY: null  # Set via environment
+

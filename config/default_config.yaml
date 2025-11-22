@@ -1,0 +1,108 @@
+# Default Configuration Template for OCR Fine-Tuning Pipeline
+
+# Pipeline Mode: detection, recognition, or full (both)
+pipeline_mode: full  # Options: detection, recognition, full
+
+# Training Backend
+training:
+  backend: local  # Options: local, azure_ml
+  device: cuda  # Options: cuda, cpu, auto
+  
+  # Azure ML Configuration (if backend is azure_ml)
+  azure_ml:
+    workspace_name: null
+    resource_group: null
+    subscription_id: null
+    compute_cluster: null
+    environment_name: ocr-training-env
+
+# Detection Model Configuration
+detection:
+  architecture: db_resnet50  # Options: db_resnet50, craft_resnet50
+  pretrained: true
+  input_size: [1024, 1024]
+  batch_size: 8
+  learning_rate: 0.001
+  epochs: 100
+  optimizer: adamw
+  scheduler: cosine
+  weight_decay: 0.0001
+
+# Recognition Model Configuration
+recognition:
+  architecture: crnn_vgg16_bn  # Options: crnn_vgg16_bn, sar_resnet31, master
+  pretrained: true
+  vocab_size: null  # Auto-detect from dataset
+  batch_size: 16
+  learning_rate: 0.001
+  epochs: 100
+  optimizer: adamw
+  scheduler: cosine
+  weight_decay: 0.0001
+
+# Data Configuration
+data:
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  augmentation:
+    enabled: true
+    rotation_range: [-5, 5]
+    brightness_range: [0.8, 1.2]
+    contrast_range: [0.8, 1.2]
+    blur_probability: 0.1
+    noise_probability: 0.1
+
+# Evaluation Configuration
+evaluation:
+  metrics:
+    - iou
+    - precision
+    - recall
+    - f1_score
+    - character_accuracy
+    - word_accuracy
+  compare_with_azure_di: true
+  azure_di_model: prebuilt-layout
+
+# Label Studio Configuration
+label_studio:
+  export_format: json  # Options: json, coco
+  import_predictions: true
+  pre_annotation:
+    enabled: false
+    provider: azure_di  # Options: azure_di, doctr
+
+# Azure Document Intelligence Configuration
+azure_di:
+  model_id: prebuilt-layout  # Options: prebuilt-layout, prebuilt-read, custom-model-id
+  use_for_baseline: true
+  use_for_preannotation: false
+
+# Deployment Configuration
+deployment:
+  target: azure_container_instances  # Options: azure_container_instances, azure_ml_endpoint
+  container:
+    cpu: 2
+    memory_gb: 4
+    gpu_enabled: false
+  api:
+    max_batch_size: 10
+    timeout_seconds: 300
+
+# Model Storage
+model_storage:
+  local_path: ./trained_models
+  versioning: true
+  export_formats:
+    - pytorch
+    - onnx  # Optional
+
+# Logging and Monitoring
+logging:
+  level: INFO
+  mlflow:
+    enabled: true
+    tracking_uri: null  # Set via environment variable
+    experiment_name: ocr-finetuning
+

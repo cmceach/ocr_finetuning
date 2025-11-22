@@ -1,0 +1,44 @@
+# Example Client Configuration
+# Copy this file and customize for each client engagement
+
+client_name: example_client
+client_id: client_001
+
+# Override default configuration
+pipeline_mode: full  # detection, recognition, or full
+
+# Client-specific model configurations
+detection:
+  architecture: db_resnet50
+  pretrained: true
+  batch_size: 4  # Adjust based on GPU memory
+  learning_rate: 0.0005  # Lower learning rate for fine-tuning
+  epochs: 50
+
+recognition:
+  architecture: crnn_vgg16_bn
+  pretrained: true
+  batch_size: 8
+  learning_rate: 0.0005
+  epochs: 50
+
+# Client-specific data paths
+data:
+  raw_documents_path: ./data/raw_documents/example_client
+  labeled_data_path: ./data/labeled_data/example_client
+  processed_data_path: ./data/processed_data/example_client
+
+# Client-specific Azure DI model (if using custom model)
+azure_di:
+  model_id: prebuilt-layout  # Or custom model ID
+  use_for_baseline: true
+
+# Deployment configuration for this client
+deployment:
+  container_name: ocr-example-client
+  resource_group: rg-example-client
+  location: eastus
+
+# Model versioning
+model_version: v1.0.0
+
