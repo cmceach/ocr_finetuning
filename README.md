@@ -266,6 +266,22 @@ This is a template repository. Customize it for your specific needs:
 
 MIT License
 
+## Deployment
+
+### Label Studio Deployment
+
+For deploying Label Studio on Azure, see:
+- [Label Studio Azure Deployment Guide](deployment/azure/LABEL_STUDIO_AZURE_DEPLOYMENT.md)
+- [Local Label Studio Setup](LABEL_STUDIO_SETUP.md)
+
+Quick deployment options:
+- **Azure Container Instances**: `./deployment/azure/label_studio_aci_deploy.sh`
+- **Azure App Service**: `./deployment/azure/label_studio_app_service_deploy.sh`
+
+### OCR Model Deployment
+
+See the [deployment scripts](deployment/azure/) for deploying trained OCR models to Azure Container Instances.
+
 ## Support
 
 For issues and questions, please open an issue in the repository.
