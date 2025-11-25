@@ -1,14 +1,17 @@
 # OCR Fine-Tuning Pipeline Template
 
-A flexible, production-ready repository template for OCR fine-tuning workflows supporting DocTR, Label Studio, and Azure Document Intelligence, deployable to Azure Container Instances.
+A flexible, production-ready repository template for OCR fine-tuning workflows supporting DocTR, NVIDIA Nemotron Parse v1.1, Label Studio, and Azure Document Intelligence, deployable to Azure Container Instances and Azure ML.
 
 ## Features
 
-- **Flexible Pipeline**: Toggle between detection-only, recognition-only, or full OCR pipeline
+- **Multiple OCR Models**: Support for DocTR (detection + recognition) and NVIDIA Nemotron Parse v1.1 (VLM-based document understanding)
+- **Flexible Pipeline**: Toggle between detection-only, recognition-only, full OCR pipeline, or Nemotron Parse
+- **Parameter-Efficient Finetuning**: LoRA and QLoRA support for Nemotron Parse to reduce GPU memory requirements
 - **Label Studio Integration**: Import/export annotations, convert to COCO format
 - **Azure Document Intelligence**: Baseline comparison and pre-annotation assistance
 - **Multiple Training Backends**: Support for local GPU training and Azure ML compute
-- **Azure Deployment**: Ready-to-deploy containerized inference server
+- **Azure Deployment**: Ready-to-deploy containerized inference servers (CPU and GPU)
+- **Auto-Scaling**: Production-ready auto-scaling configurations for Azure ML endpoints
 - **MLOps Ready**: MLflow integration for experiment tracking
 
 ## Quick Start
@@ -16,9 +19,12 @@ A flexible, production-ready repository template for OCR fine-tuning workflows s
 ### Prerequisites
 
 - Python 3.9+
-- CUDA-capable GPU (for training, optional for inference)
+- CUDA-capable GPU (required for Nemotron Parse training/inference, optional for DocTR)
+  - **Nemotron Parse**: Minimum 16GB VRAM (V100/T4), recommended 24GB+ (A100)
+  - **DocTR**: 8GB+ VRAM sufficient
 - Azure account (for Azure DI and deployment)
 - Label Studio instance (for annotation)
+- HuggingFace account (for accessing Nemotron Parse model)
 
 ### Installation
 
@@ -73,6 +79,7 @@ converter.save_full_pipeline("./data/processed_data")
 
 #### 3. Train Model
 
+**DocTR Pipeline:**
 ```bash
 # Local training
 bash training/scripts/train_local.sh \
@@ -86,8 +93,31 @@ python -m src.training.train_full_pipeline \
     --client-config config/client_configs/example_client.yaml
 ```
 
+**Nemotron Parse (VLM-based):**
+```bash
+# Train with LoRA (recommended - memory efficient)
+python -m src.training.train_nemotron \
+    --train-data data/labeled_data/train.json \
+    --val-data data/labeled_data/val.json \
+    --output-dir trained_models/nemotron \
+    --learning-rate 2e-5 \
+    --batch-size 4
+
+# Train with QLoRA (4-bit quantization - for limited GPU memory)
+python -m src.training.train_nemotron \
+    --train-data data/labeled_data/train.json \
+    --qlora \
+    --batch-size 2
+
+# Or use the pipeline
+python -m src.training.train_full_pipeline \
+    --nemotron \
+    --train-data data/labeled_data/train.json
+```
+
 #### 4. Evaluate Model
 
+**DocTR:**
 ```python
 from src.serving.model_loader import load_model_for_inference
 from src.evaluation.evaluate_ocr import evaluate_from_file
@@ -99,14 +129,44 @@ model = load_model_for_inference(
 metrics = evaluate_from_file(model, "data/evaluation_data/test.json")
 ```
 
-#### 5. Deploy to Azure Container Instances
+**Nemotron Parse:**
+```python
+from src.training.nemotron_model import load_finetuned_nemotron
+from src.evaluation.evaluate_ocr import evaluate_nemotron_from_file
 
+model, processor = load_finetuned_nemotron(
+    adapter_path="trained_models/nemotron/final/adapter"
+)
+results = evaluate_nemotron_from_file(
+    model, processor, "data/evaluation_data/test.json"
+)
+print(f"Character Accuracy: {results['metrics']['avg_char_accuracy']:.2%}")
+print(f"Word Accuracy: {results['metrics']['avg_word_accuracy']:.2%}")
+```
+
+#### 5. Deploy to Azure
+
+**DocTR (CPU):**
 ```bash
 bash deployment/azure/deploy_container.sh \
     --resource-group your-resource-group \
     --container-name ocr-inference \
     --registry-name your-registry \
     --image-name ocr-inference:latest
+```
+
+**Nemotron Parse (GPU):**
+```bash
+# Deploy to Azure Container Instances with GPU
+bash deployment/azure/deploy_nemotron_aci.sh \
+    --resource-group your-resource-group \
+    --registry-name your-registry \
+    --gpu-sku V100 \
+    --adapter-path /models/adapter  # Optional: path to finetuned adapter
+
+# Or deploy to Azure ML Managed Endpoint (recommended for production)
+az ml online-endpoint create --file deployment/azure/nemotron_ml_endpoint.yaml
+az ml online-deployment create --file deployment/azure/nemotron_ml_deployment.yaml --all-traffic
 ```
 
 ## Project Structure
@@ -117,14 +177,31 @@ ocr_finetuning/
 ├── notebooks/               # Jupyter notebooks for analysis
 ├── src/                     # Source code
 │   ├── data/               # Data loaders and converters
+│   │   ├── nemotron_converter.py  # Nemotron dataset preparation
+│   │   └── ...
 │   ├── preprocessing/      # Data preprocessing
 │   ├── training/          # Training scripts
+│   │   ├── train_nemotron.py      # Nemotron training
+│   │   ├── nemotron_model.py      # Model utilities
+│   │   └── ...
 │   ├── evaluation/        # Evaluation utilities
-│   ├── serving/           # Inference server
+│   ├── serving/           # Inference servers
+│   │   ├── nemotron_server.py     # Nemotron FastAPI server
+│   │   ├── nemotron_score.py      # Azure ML scoring script
+│   │   └── ...
 │   └── utils/             # Utilities
 ├── training/              # Training configs and scripts
+│   └── configs/
+│       └── nemotron_config.yaml   # Nemotron training config
 ├── serving/               # Serving Dockerfiles and configs
 ├── deployment/            # Deployment scripts
+│   └── azure/
+│       ├── deploy_nemotron_aci.sh      # ACI GPU deployment
+│       ├── nemotron_ml_job.yaml        # Azure ML training job
+│       ├── nemotron_ml_endpoint.yaml   # ML endpoint config
+│       ├── nemotron_ml_deployment.yaml # ML deployment config
+│       ├── nemotron_dockerfile         # GPU Docker image
+│       └── autoscale_profiles.yaml     # Auto-scaling profiles
 └── config/                # Configuration files
 ```
 
@@ -136,10 +213,16 @@ The template uses YAML-based configuration files:
 - `config/client_configs/`: Client-specific configurations
 
 Key configuration options:
-- `pipeline_mode`: `detection`, `recognition`, or `full`
+- `pipeline_mode`: `detection`, `recognition`, `full`, or `nemotron`
 - `training.backend`: `local` or `azure_ml`
 - `detection.architecture`: Model architecture for detection
 - `recognition.architecture`: Model architecture for recognition
+- `nemotron.use_lora`: Enable LoRA for parameter-efficient finetuning
+- `nemotron.use_qlora`: Enable 4-bit quantization (QLoRA) for memory efficiency
+- `nemotron.learning_rate`: Learning rate (default: 2e-5)
+- `nemotron.batch_size`: Batch size per device (default: 4)
+
+See `training/configs/nemotron_config.yaml` for full Nemotron configuration options.
 
 ## Label Studio Integration
 
@@ -186,16 +269,16 @@ task = preprocessor.preannotate_document("document.pdf", "http://labelstudio:808
 
 ## Training
 
-### Local Training
+### DocTR Training
 
+**Local Training:**
 ```bash
 bash training/scripts/train_local.sh \
     --config config/default_config.yaml \
     --mode full
 ```
 
-### Azure ML Training
-
+**Azure ML Training:**
 ```bash
 bash training/scripts/train_azure_ml.sh \
     --workspace-name your-workspace \
@@ -203,17 +286,72 @@ bash training/scripts/train_azure_ml.sh \
     --compute-cluster your-cluster
 ```
 
+### Nemotron Parse Training
+
+**Local Training (LoRA - Recommended):**
+```bash
+python -m src.training.train_nemotron \
+    --config training/configs/nemotron_config.yaml \
+    --train-data data/labeled_data/train.json \
+    --val-data data/labeled_data/val.json \
+    --output-dir trained_models/nemotron
+```
+
+**Local Training (QLoRA - Memory Efficient):**
+```bash
+python -m src.training.train_nemotron \
+    --train-data data/labeled_data/train.json \
+    --qlora \
+    --batch-size 2 \
+    --learning-rate 2e-5
+```
+
+**Azure ML Training:**
+```bash
+az ml job create \
+    --file deployment/azure/nemotron_ml_job.yaml \
+    --resource-group your-resource-group \
+    --workspace-name your-workspace
+```
+
+**Training Tips:**
+- Use LoRA (`--use-lora`) for 10-20x memory reduction vs full finetuning
+- Use QLoRA (`--qlora`) for 4-bit quantization - works on 16GB GPUs
+- Recommended batch size: 4-8 with gradient accumulation
+- Learning rate: 2e-5 works well for LoRA, adjust based on your data
+
 ## Deployment
 
 ### Local Testing
 
+**DocTR Server:**
 ```bash
 cd serving
 docker-compose up
 ```
 
+**Nemotron Parse Server:**
+```bash
+# Start with base model
+python -m src.serving.nemotron_server \
+    --host 0.0.0.0 \
+    --port 8000
+
+# Start with finetuned adapter
+python -m src.serving.nemotron_server \
+    --adapter-path trained_models/nemotron/final/adapter \
+    --host 0.0.0.0 \
+    --port 8000
+
+# Use vLLM backend for faster inference (optional)
+python -m src.serving.nemotron_server \
+    --adapter-path trained_models/nemotron/final/adapter \
+    --use-vllm
+```
+
 ### Azure Container Instances
 
+**DocTR (CPU):**
 ```bash
 bash deployment/azure/deploy_container.sh \
     --resource-group rg-ocr \
@@ -223,9 +361,42 @@ bash deployment/azure/deploy_container.sh \
     --memory 4
 ```
 
+**Nemotron Parse (GPU):**
+```bash
+bash deployment/azure/deploy_nemotron_aci.sh \
+    --resource-group rg-ocr \
+    --registry-name yourregistry \
+    --gpu-sku V100 \
+    --cpu 4 \
+    --memory 16 \
+    --adapter-path /models/adapter  # Optional
+```
+
+### Azure ML Managed Endpoints
+
+**Nemotron Parse (Production):**
+```bash
+# Create endpoint
+az ml online-endpoint create \
+    --file deployment/azure/nemotron_ml_endpoint.yaml \
+    --resource-group rg-ocr \
+    --workspace-name ws-ocr
+
+# Create deployment with auto-scaling
+az ml online-deployment create \
+    --file deployment/azure/nemotron_ml_deployment.yaml \
+    --resource-group rg-ocr \
+    --workspace-name ws-ocr \
+    --all-traffic
+```
+
+See `deployment/azure/autoscale_profiles.yaml` for recommended auto-scaling configurations.
+
 ## API Usage
 
-Once deployed, the inference API provides:
+### DocTR API
+
+Once deployed, the DocTR inference API provides:
 
 - `POST /predict`: Single document OCR
 - `POST /predict/batch`: Batch processing
@@ -236,6 +407,78 @@ Example:
 ```bash
 curl -X POST http://your-container-ip:8000/predict \
     -F "file=@document.pdf"
+```
+
+### Nemotron Parse API
+
+**Endpoints:**
+- `POST /predict`: Extract text from document image
+- `POST /predict/batch`: Batch processing
+- `POST /extract-text`: Simple text extraction (no structured output)
+- `GET /health`: Health check
+- `GET /ready`: Readiness check
+- `GET /model-info`: Model information
+
+**Request Examples:**
+
+**File Upload:**
+```bash
+curl -X POST "http://localhost:8000/predict" \
+  -F "file=@document.png" \
+  -F "max_new_tokens=4096" \
+  -F "temperature=0.0"
+```
+
+**Python Client:**
+```python
+import requests
+
+with open("document.png", "rb") as f:
+    response = requests.post(
+        "http://localhost:8000/predict",
+        files={"file": f},
+        params={"max_new_tokens": 4096, "temperature": 0.0}
+    )
+result = response.json()
+for region in result["regions"]:
+    print(f"{region['label']}: {region['text']}")
+```
+
+**Azure ML Endpoint:**
+```python
+import requests
+import base64
+
+# Encode image
+with open("document.png", "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode()
+
+# Call endpoint
+response = requests.post(
+    "https://<endpoint>.inference.ml.azure.com/score",
+    headers={"Authorization": "Bearer <api-key>"},
+    json={
+        "image_base64": image_base64,
+        "max_new_tokens": 4096
+    }
+)
+result = response.json()
+```
+
+**Response Format:**
+```json
+{
+  "raw_text": "<text><bbox>10,20,200,50</bbox>Invoice #12345</text>...",
+  "regions": [
+    {
+      "text": "Invoice #12345",
+      "bbox": [10.0, 20.0, 200.0, 50.0],
+      "label": "text"
+    }
+  ],
+  "model_version": "1.0.0",
+  "processing_time_ms": 3542.5
+}
 ```
 
 ## Development
@@ -280,7 +523,54 @@ Quick deployment options:
 
 ### OCR Model Deployment
 
-See the [deployment scripts](deployment/azure/) for deploying trained OCR models to Azure Container Instances.
+**DocTR Models:**
+See the [deployment scripts](deployment/azure/) for deploying trained DocTR models to Azure Container Instances.
+
+**Nemotron Parse Models:**
+- **Azure Container Instances (GPU)**: `deployment/azure/deploy_nemotron_aci.sh`
+- **Azure ML Managed Endpoint**: `deployment/azure/nemotron_ml_endpoint.yaml` and `nemotron_ml_deployment.yaml`
+- **Auto-Scaling**: See `deployment/azure/autoscale_profiles.yaml` for production configurations
+
+**GPU Requirements:**
+- Minimum: V100 16GB or T4 16GB
+- Recommended: A100 40GB+ for production workloads
+- See auto-scale profiles for cost-optimized configurations
+
+## Model Comparison
+
+| Feature | DocTR | Nemotron Parse |
+|---------|-------|----------------|
+| **Architecture** | Detection + Recognition (2-stage) | Vision-Language Model (end-to-end) |
+| **Model Size** | ~50-100M params | ~900M params |
+| **GPU Memory** | 8GB+ | 16GB+ (LoRA), 24GB+ (full) |
+| **Training** | Separate detection/recognition | Unified finetuning |
+| **Output** | Bounding boxes + text | Structured text with bboxes |
+| **Best For** | Traditional OCR, simple layouts | Complex documents, structured data |
+| **Finetuning** | Full model | LoRA/QLoRA supported |
+
+## Nemotron Parse Quick Reference
+
+**Training:**
+```bash
+# LoRA finetuning (recommended)
+python -m src.training.train_nemotron --train-data train.json --use-lora
+
+# QLoRA (4-bit, memory efficient)
+python -m src.training.train_nemotron --train-data train.json --qlora
+```
+
+**Serving:**
+```bash
+# Local server
+python -m src.serving.nemotron_server --adapter-path ./adapter
+
+# Azure ML endpoint
+az ml online-deployment create --file deployment/azure/nemotron_ml_deployment.yaml
+```
+
+**Request Format:**
+- File upload: `curl -F "file=@doc.png" http://localhost:8000/predict`
+- Base64 (Azure ML): `{"image_base64": "...", "max_new_tokens": 4096}`
 
 ## Support
 
