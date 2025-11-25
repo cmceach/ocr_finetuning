@@ -320,6 +320,148 @@ az ml job create \
 - Recommended batch size: 4-8 with gradient accumulation
 - Learning rate: 2e-5 works well for LoRA, adjust based on your data
 
+### Monitoring Training Progress
+
+During training, you can monitor evaluations and metrics in several ways:
+
+#### 1. TensorBoard (Recommended - Real-time Visualization)
+
+TensorBoard is enabled by default and provides interactive dashboards:
+
+```bash
+# Start training (in one terminal)
+python -m src.training.train_nemotron --train-data train.json
+
+# Start TensorBoard (in another terminal)
+tensorboard --logdir trained_models/nemotron
+# Open http://localhost:6006 in your browser
+```
+
+**What you'll see:**
+- **Loss curves**: Training and validation loss over time
+- **Accuracy metrics**: Character accuracy, word accuracy, exact match rate
+- **Learning rate**: LR schedule visualization
+- **GPU metrics**: Memory usage and utilization
+
+**Key metrics to watch:**
+- `train/loss` - Should decrease smoothly
+- `eval/eval_loss` - Should track train loss (watch for overfitting)
+- `eval/eval_char_accuracy` - Should increase over time (>0.90 is good)
+- `eval/eval_word_accuracy` - Should increase over time (>0.85 is good)
+
+#### 2. Console Logging (Built-in)
+
+Metrics are printed to console during training:
+
+```bash
+python -m src.training.train_nemotron --train-data train.json
+
+# Example output:
+# Epoch 1/3
+# Step 10/100: loss=2.345, learning_rate=2e-5
+# Step 20/100: loss=2.123, learning_rate=2e-5
+# ...
+# Eval: eval_loss=1.987, eval_char_accuracy=0.8523, eval_word_accuracy=0.7845
+```
+
+**Configure logging frequency:**
+```yaml
+# training/configs/nemotron_config.yaml
+nemotron:
+  logging_steps: 10      # Log metrics every 10 steps
+  eval_steps: 100        # Run evaluation every 100 steps
+```
+
+#### 3. MLflow (Experiment Tracking)
+
+For comparing multiple training runs and model versioning:
+
+```bash
+# Start MLflow UI (optional)
+mlflow ui --port 5000
+
+# Set tracking URI
+export MLFLOW_TRACKING_URI="http://localhost:5000"
+
+# Run training
+python -m src.training.train_nemotron \
+    --train-data train.json \
+    --config training/configs/nemotron_config.yaml
+```
+
+**View in MLflow UI:**
+- Open `http://localhost:5000`
+- Compare runs side-by-side
+- View hyperparameters, metrics, and model artifacts
+- Download best model checkpoints
+
+**Enable in config:**
+```yaml
+# config/default_config.yaml
+logging:
+  mlflow:
+    enabled: true
+    tracking_uri: "http://localhost:5000"
+    experiment_name: "nemotron-finetuning"
+```
+
+#### 4. GPU Monitoring
+
+Monitor GPU usage during training:
+
+```bash
+# In another terminal
+watch -n 1 nvidia-smi
+
+# Or use gpustat for cleaner output
+pip install gpustat
+gpustat -i 1
+```
+
+**What to watch:**
+- GPU memory usage (should be stable, not maxed out)
+- GPU utilization (should be 80-100% during training)
+- Temperature (should stay < 80°C)
+
+#### Quick Monitoring Setup
+
+**Recommended workflow:**
+
+```bash
+# Terminal 1: Start training
+python -m src.training.train_nemotron \
+    --train-data data/train.json \
+    --val-data data/val.json \
+    --output-dir trained_models/nemotron
+
+# Terminal 2: Start TensorBoard
+tensorboard --logdir trained_models/nemotron --port 6006
+
+# Terminal 3: Monitor GPU
+watch -n 1 nvidia-smi
+```
+
+Then open:
+- **TensorBoard**: http://localhost:6006
+- **MLflow UI**: http://localhost:5000 (if enabled)
+
+#### Understanding Metrics
+
+| Metric | Description | Good Value |
+|--------|-------------|------------|
+| `loss` | Training loss | Decreasing, typically 0.5-2.0 |
+| `eval_loss` | Validation loss | Lower is better, should track train loss |
+| `eval_char_accuracy` | Character-level accuracy | > 0.90 for good OCR |
+| `eval_word_accuracy` | Word-level accuracy | > 0.85 for good OCR |
+| `eval_exact_match_rate` | Exact text match | > 0.70 for structured docs |
+
+**Red flags:**
+- Eval loss increasing while train loss decreases → Overfitting (increase dropout, reduce epochs)
+- Loss not decreasing → Learning rate too high/low (try 1e-5 to 5e-5)
+- GPU memory errors → Reduce batch size or use QLoRA
+
+For detailed monitoring instructions, see [Monitoring Training Guide](docs/MONITORING_TRAINING.md).
+
 ## Deployment
 
 ### Local Testing

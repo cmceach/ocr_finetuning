@@ -159,33 +159,69 @@ def create_training_arguments(
         remove_unused_columns=False,
         dataloader_num_workers=4,
         dataloader_pin_memory=True,
-        report_to=["mlflow"] if os.environ.get("MLFLOW_TRACKING_URI") else [],
+        report_to=["mlflow"] if os.environ.get("MLFLOW_TRACKING_URI") else ["tensorboard"],
         run_name="nemotron-parse-finetuning",
     )
 
 
-def compute_metrics(eval_preds) -> Dict[str, float]:
+def compute_metrics(eval_preds, processor: Optional[Any] = None) -> Dict[str, float]:
     """
     Compute evaluation metrics for Nemotron Parse.
 
     Args:
-        eval_preds: Evaluation predictions from trainer
+        eval_preds: Evaluation predictions from trainer (predictions, labels)
+        processor: Optional processor for decoding (will be set by trainer)
 
     Returns:
         Dictionary of metrics
     """
     predictions, labels = eval_preds
 
-    # Decode predictions and labels
-    # Note: This is a simplified version - you may want to add
-    # more sophisticated metrics like BLEU, character error rate, etc.
-
     metrics = {}
 
-    # Calculate exact match accuracy (if applicable)
     if predictions is not None and labels is not None:
-        # Basic metrics - extend as needed
-        metrics["num_samples"] = len(predictions)
+        # Decode predictions and labels if processor available
+        if processor is not None:
+            # Decode predictions (skip padding tokens)
+            decoded_preds = processor.batch_decode(
+                predictions, skip_special_tokens=True
+            )
+            decoded_labels = processor.batch_decode(
+                labels, skip_special_tokens=True
+            )
+
+            # Calculate text similarity metrics
+            try:
+                from ..evaluation.evaluate_ocr import calculate_text_similarity
+            except ImportError:
+                # Fallback if evaluation module not available
+                def calculate_text_similarity(pred, label):
+                    return {"char_accuracy": 0.0, "word_accuracy": 0.0, "exact_match": 0.0}
+
+            char_accuracies = []
+            word_accuracies = []
+            exact_matches = []
+
+            for pred, label in zip(decoded_preds, decoded_labels):
+                # Skip empty predictions/labels
+                if not pred.strip() and not label.strip():
+                    continue
+
+                similarity = calculate_text_similarity(pred.strip(), label.strip())
+                char_accuracies.append(similarity["char_accuracy"])
+                word_accuracies.append(similarity["word_accuracy"])
+                exact_matches.append(similarity["exact_match"])
+
+            if char_accuracies:
+                metrics["eval_char_accuracy"] = sum(char_accuracies) / len(char_accuracies)
+                metrics["eval_word_accuracy"] = sum(word_accuracies) / len(word_accuracies)
+                metrics["eval_exact_match_rate"] = sum(exact_matches) / len(exact_matches)
+
+        # Token-level metrics
+        metrics["eval_num_samples"] = len(predictions)
+
+        # Calculate perplexity if logits available
+        # (This would require modifying the trainer to return logits)
 
     return metrics
 
@@ -340,6 +376,10 @@ def train_nemotron_model(
         output_dir=str(output_path),
     )
 
+    # Create compute_metrics function with processor closure
+    def compute_metrics_with_processor(eval_preds):
+        return compute_metrics(eval_preds, processor=processor)
+
     # Create trainer
     trainer = Seq2SeqTrainer(
         model=model,
@@ -348,7 +388,7 @@ def train_nemotron_model(
         eval_dataset=val_dataset,
         data_collator=data_collator,
         tokenizer=processor,
-        compute_metrics=compute_metrics,
+        compute_metrics=compute_metrics_with_processor,
         callbacks=[
             EarlyStoppingCallback(
                 early_stopping_patience=training_config.early_stopping_patience
