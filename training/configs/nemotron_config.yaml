@@ -1,0 +1,88 @@
+# Nemotron Parse v1.1 Finetuning Configuration
+# This config is for finetuning NVIDIA's Nemotron Parse model for document understanding
+
+# Model Configuration
+nemotron:
+  # Model identifier (HuggingFace model ID or local path)
+  model_id: "nvidia/NVIDIA-Nemotron-Parse-v1.1"
+  trust_remote_code: true
+
+  # Training Mode
+  # - use_lora: true = Parameter-efficient finetuning with LoRA (recommended)
+  # - use_qlora: true = 4-bit quantized LoRA (for limited GPU memory)
+  # - Both false = Full finetuning (requires significant GPU memory)
+  use_lora: true
+  use_qlora: false
+
+  # LoRA Configuration
+  # These settings apply when use_lora=true or use_qlora=true
+  lora_r: 16                    # LoRA rank (higher = more parameters, better quality)
+  lora_alpha: 32                # LoRA alpha scaling factor (typically 2x rank)
+  lora_dropout: 0.05            # Dropout for LoRA layers
+  lora_target_modules: null     # null = auto-detect, or specify list like ["q_proj", "v_proj"]
+
+  # Training Hyperparameters
+  learning_rate: 2.0e-5         # Learning rate (2e-5 recommended for LoRA)
+  batch_size: 4                 # Per-device batch size
+  gradient_accumulation_steps: 4 # Effective batch = batch_size * gradient_accumulation
+  num_epochs: 3                 # Number of training epochs
+  warmup_ratio: 0.03            # Warmup steps as ratio of total steps
+  weight_decay: 0.01            # Weight decay for AdamW
+  max_grad_norm: 1.0            # Gradient clipping
+
+  # Sequence Settings
+  max_length: 4096              # Maximum sequence length for text output
+
+  # Precision Settings
+  bf16: true                    # Use bfloat16 (recommended for A100/H100)
+  fp16: false                   # Use float16 (for older GPUs)
+
+  # Memory Optimization
+  gradient_checkpointing: true  # Trade compute for memory
+  use_flash_attention: true     # Use Flash Attention 2 (faster, less memory)
+
+  # Evaluation and Checkpointing
+  eval_steps: 100               # Evaluate every N steps
+  save_steps: 500               # Save checkpoint every N steps
+  logging_steps: 10             # Log metrics every N steps
+  save_total_limit: 3           # Keep only N best checkpoints
+
+  # Early Stopping
+  early_stopping_patience: 3    # Stop after N evals without improvement
+
+  # Model Saving
+  save_full_model: false        # true = merge LoRA and save full model
+
+# Pipeline mode (for integration with train_full_pipeline.py)
+# Options: detection, recognition, full, nemotron
+pipeline_mode: nemotron
+
+# Training backend
+training:
+  backend: local
+  device: cuda
+
+# Data Configuration
+data:
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  # Image base directory for resolving relative paths in annotations
+  image_base_dir: null
+  # Augmentation settings (applied during data loading)
+  augmentation:
+    enabled: false  # Nemotron handles its own preprocessing
+
+# Model Storage
+model_storage:
+  local_path: ./trained_models
+  versioning: true
+
+# Logging
+logging:
+  level: INFO
+  mlflow:
+    enabled: true
+    tracking_uri: null  # Set via MLFLOW_TRACKING_URI env var
+    experiment_name: nemotron-finetuning
+

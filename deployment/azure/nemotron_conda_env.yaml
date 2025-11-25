@@ -1,0 +1,51 @@
+# Conda environment for Nemotron Parse training on Azure ML
+name: nemotron-training
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+  - pip>=23.0
+  - pytorch>=2.2.0
+  - pytorch-cuda=12.1
+  - torchvision
+  - numpy>=1.24.0
+  - pandas>=2.0.0
+  - pillow>=10.0.0
+  - pyyaml>=6.0
+  - tqdm>=4.66.0
+  
+  - pip:
+    # Core ML libraries
+    - transformers>=4.40.0
+    - accelerate>=0.30.0
+    - peft>=0.11.0
+    - bitsandbytes>=0.43.0
+    - sentencepiece>=0.2.0
+    - datasets>=2.18.0
+    
+    # Training utilities
+    - mlflow>=2.8.0
+    - tensorboard>=2.14.0
+    - wandb>=0.15.0
+    
+    # Azure integration
+    - azure-ai-ml>=1.12.0
+    - azure-identity>=1.15.0
+    - azure-storage-blob>=12.19.0
+    
+    # Image processing
+    - opencv-python>=4.8.0
+    - albumentations>=1.3.0
+    
+    # API/Serving (for evaluation)
+    - fastapi>=0.104.0
+    - uvicorn>=0.24.0
+    
+    # Utilities
+    - python-dotenv>=1.0.0
+    - requests>=2.31.0
+

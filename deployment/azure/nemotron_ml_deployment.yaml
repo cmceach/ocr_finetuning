@@ -1,0 +1,188 @@
+# Azure ML Managed Online Deployment for Nemotron Parse
+#
+# Deploys a finetuned Nemotron Parse model to the managed endpoint
+# Requires GPU instance (Standard_NC6s_v3 or higher)
+#
+# Prerequisites:
+#   1. Create the endpoint first using nemotron_ml_endpoint.yaml
+#   2. Register your finetuned model in Azure ML
+#   3. Update the 'model' path below to point to your registered model
+#
+# Usage:
+#   az ml online-deployment create --file deployment/azure/nemotron_ml_deployment.yaml --all-traffic
+
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineDeployment.schema.json
+
+name: nemotron-v1
+endpoint_name: nemotron-parse-endpoint
+description: Nemotron Parse v1.1 deployment with LoRA adapter
+
+# Model reference - update with your registered model
+model: azureml:nemotron-parse-finetuned:1
+
+# Scoring script and environment
+code_configuration:
+  code: ../../src
+  scoring_script: serving/nemotron_score.py
+
+environment:
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  conda_file: nemotron_conda_env.yaml
+
+# =============================================================================
+# Instance Configuration
+# =============================================================================
+# GPU Options (pick based on your needs):
+#   - Standard_NC6s_v3:   1x V100 16GB  - Good for LoRA/QLoRA models
+#   - Standard_NC12s_v3:  2x V100 16GB  - Higher throughput
+#   - Standard_NC24s_v3:  4x V100 16GB  - High throughput
+#   - Standard_NC4as_T4_v3: 1x T4 16GB  - Cost-effective, slower
+#   - Standard_NC24ads_A100_v4: 1x A100 80GB - Fastest, most expensive
+instance_type: Standard_NC6s_v3
+instance_count: 1  # Starting instances (overridden by autoscale min)
+
+# =============================================================================
+# Request Settings - Tuned for VLM Inference
+# =============================================================================
+request_settings:
+  # Timeout for single request (90s allows for complex documents)
+  request_timeout_ms: 90000
+  # Max concurrent requests per GPU instance
+  # V100 16GB can handle 2-4 concurrent requests with LoRA model
+  # Reduce to 1-2 if running full model or seeing OOM errors
+  max_concurrent_requests_per_instance: 2
+  # Queue depth before rejecting requests
+  max_queue_wait_ms: 60000
+
+# =============================================================================
+# Auto-Scale Settings (RECOMMENDED for Production)
+# =============================================================================
+# Target-based autoscaling for GPU workloads
+scale_settings:
+  type: target_utilization
+  
+  # Minimum instances - keeps at least 1 warm to avoid cold starts
+  # Set to 0 for dev/test to save costs (but expect 2-3 min cold start)
+  min_instances: 1
+  
+  # Maximum instances - cap based on budget and GPU quota
+  max_instances: 5
+  
+  # Target utilization percentage (0-100)
+  # For GPU VLMs, target 60-70% to leave headroom for request spikes
+  # Lower values = faster scale-up, higher cost
+  # Higher values = slower scale-up, lower cost
+  target_utilization_percentage: 70
+  
+  # Polling interval for metrics (seconds)
+  polling_interval: 15
+  
+  # Scale-down delay - wait before removing instances
+  # Set high (300-600s) for GPU to avoid thrashing due to cold starts
+  scale_down_delay_in_seconds: 300
+
+# =============================================================================
+# Alternative: Rule-Based Autoscaling
+# =============================================================================
+# Uncomment below and comment out target_utilization above for rule-based scaling
+#
+# scale_settings:
+#   type: rule_based
+#   min_instances: 1
+#   max_instances: 5
+#   rules:
+#     # Scale up when average latency > 30 seconds
+#     - metric_trigger:
+#         metric_name: RequestLatency
+#         metric_resource_uri: ""  # Auto-filled
+#         time_grain: PT1M
+#         statistic: Average
+#         time_window: PT5M
+#         time_aggregation: Average
+#         operator: GreaterThan
+#         threshold: 30000  # 30 seconds in ms
+#       scale_action:
+#         direction: Increase
+#         type: ChangeCount
+#         value: 1
+#         cooldown: PT5M
+#     
+#     # Scale up when queue has > 5 pending requests
+#     - metric_trigger:
+#         metric_name: RequestsInQueue
+#         metric_resource_uri: ""
+#         time_grain: PT1M
+#         statistic: Average
+#         time_window: PT2M
+#         time_aggregation: Average
+#         operator: GreaterThan
+#         threshold: 5
+#       scale_action:
+#         direction: Increase
+#         type: ChangeCount
+#         value: 1
+#         cooldown: PT3M
+#     
+#     # Scale down when utilization < 30% for 10 minutes
+#     - metric_trigger:
+#         metric_name: CpuUtilizationPercentage
+#         metric_resource_uri: ""
+#         time_grain: PT1M
+#         statistic: Average
+#         time_window: PT10M
+#         time_aggregation: Average
+#         operator: LessThan
+#         threshold: 30
+#       scale_action:
+#         direction: Decrease
+#         type: ChangeCount
+#         value: 1
+#         cooldown: PT10M
+
+# =============================================================================
+# Health Probes - Tuned for Slow Model Loading
+# =============================================================================
+liveness_probe:
+  initial_delay: 180      # 3 min - model loading takes time
+  period: 30              # Check every 30s
+  timeout: 10             # 10s timeout for health check
+  failure_threshold: 3    # 3 failures before restart
+  success_threshold: 1    # 1 success to mark healthy
+
+readiness_probe:
+  initial_delay: 180      # 3 min - wait for model to load
+  period: 30              # Check every 30s
+  timeout: 10             # 10s timeout
+  failure_threshold: 3    # 3 failures before removing from LB
+  success_threshold: 1    # 1 success to add to LB
+
+# =============================================================================
+# Resource Requests/Limits
+# =============================================================================
+resources:
+  requests:
+    cpu: "4"
+    memory: "16Gi"
+    nvidia.com/gpu: "1"
+  limits:
+    cpu: "4"
+    memory: "16Gi"
+    nvidia.com/gpu: "1"
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+environment_variables:
+  TRANSFORMERS_CACHE: /tmp/huggingface
+  HF_HOME: /tmp/huggingface
+  MODEL_VERSION: "1.0.0"
+  USE_FLASH_ATTENTION: "true"
+  TORCH_DTYPE: "bfloat16"
+  # Optimize CUDA memory allocation
+  PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:512"
+
+tags:
+  model: nemotron-parse-v1.1
+  gpu: v100
+  autoscale: enabled
+

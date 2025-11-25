@@ -1,0 +1,228 @@
+# =============================================================================
+# Auto-Scale Profiles for Nemotron Parse Deployment
+# =============================================================================
+# Choose the profile that matches your use case and copy the settings
+# to nemotron_ml_deployment.yaml
+#
+# Key considerations for GPU VLM auto-scaling:
+#   1. Cold start time: ~2-3 minutes to load model into GPU memory
+#   2. Request latency: 3-15 seconds per document (varies by complexity)
+#   3. GPU memory: V100 16GB supports 2-4 concurrent requests with LoRA
+#   4. Cost: GPU instances are expensive, balance availability vs cost
+
+# =============================================================================
+# DEVELOPMENT / TESTING
+# =============================================================================
+# - Scales to zero when idle (saves cost)
+# - Single instance max
+# - Accepts longer cold starts
+development:
+  scale_settings:
+    type: target_utilization
+    min_instances: 0              # Scale to zero when idle
+    max_instances: 1              # Single instance only
+    target_utilization_percentage: 80
+    polling_interval: 30
+    scale_down_delay_in_seconds: 120  # 2 min - faster scale down
+  
+  request_settings:
+    request_timeout_ms: 120000    # 2 min - longer for cold starts
+    max_concurrent_requests_per_instance: 2
+    max_queue_wait_ms: 180000     # 3 min - wait for cold start
+  
+  instance_type: Standard_NC4as_T4_v3  # T4 is cost-effective for dev
+  
+  estimated_monthly_cost_usd: 50-200  # When occasionally used
+
+# =============================================================================
+# STAGING / QA
+# =============================================================================
+# - Always-on single instance (no cold starts)
+# - Can scale up for load testing
+# - Moderate cost optimization
+staging:
+  scale_settings:
+    type: target_utilization
+    min_instances: 1              # Always warm
+    max_instances: 3              # Allow burst capacity
+    target_utilization_percentage: 70
+    polling_interval: 15
+    scale_down_delay_in_seconds: 300  # 5 min
+  
+  request_settings:
+    request_timeout_ms: 90000
+    max_concurrent_requests_per_instance: 2
+    max_queue_wait_ms: 60000
+  
+  instance_type: Standard_NC6s_v3  # V100 for production-like testing
+  
+  estimated_monthly_cost_usd: 1500-3000
+
+# =============================================================================
+# PRODUCTION - STANDARD
+# =============================================================================
+# - Always-on with redundancy
+# - Fast scale-up for traffic spikes
+# - Balanced cost/performance
+production_standard:
+  scale_settings:
+    type: target_utilization
+    min_instances: 2              # Redundancy + no cold starts
+    max_instances: 8              # Handle traffic spikes
+    target_utilization_percentage: 65  # More headroom for spikes
+    polling_interval: 10          # Faster polling
+    scale_down_delay_in_seconds: 600  # 10 min - avoid thrashing
+  
+  request_settings:
+    request_timeout_ms: 60000     # 1 min - tighter SLA
+    max_concurrent_requests_per_instance: 3
+    max_queue_wait_ms: 30000      # 30s max queue wait
+  
+  instance_type: Standard_NC6s_v3
+  
+  estimated_monthly_cost_usd: 3000-8000
+
+# =============================================================================
+# PRODUCTION - HIGH THROUGHPUT
+# =============================================================================
+# - Optimized for maximum requests/second
+# - Higher base capacity
+# - Faster scaling
+production_high_throughput:
+  scale_settings:
+    type: target_utilization
+    min_instances: 4              # Higher base capacity
+    max_instances: 16             # High burst capacity
+    target_utilization_percentage: 60
+    polling_interval: 10
+    scale_down_delay_in_seconds: 300
+  
+  request_settings:
+    request_timeout_ms: 45000     # Tighter timeout
+    max_concurrent_requests_per_instance: 4  # Max concurrency
+    max_queue_wait_ms: 15000      # Short queue wait
+  
+  # Use A100 for 2-3x throughput vs V100
+  instance_type: Standard_NC24ads_A100_v4
+  
+  estimated_monthly_cost_usd: 15000-40000
+
+# =============================================================================
+# PRODUCTION - COST OPTIMIZED
+# =============================================================================
+# - Accepts higher latency for lower cost
+# - Uses cheaper GPU SKU
+# - Longer scale-down delay
+production_cost_optimized:
+  scale_settings:
+    type: target_utilization
+    min_instances: 1              # Single always-on instance
+    max_instances: 4              # Limited max
+    target_utilization_percentage: 80  # Higher utilization before scaling
+    polling_interval: 30          # Less frequent checks
+    scale_down_delay_in_seconds: 900  # 15 min - very slow scale down
+  
+  request_settings:
+    request_timeout_ms: 120000    # 2 min - relaxed SLA
+    max_concurrent_requests_per_instance: 4
+    max_queue_wait_ms: 90000      # Longer queue acceptable
+  
+  instance_type: Standard_NC4as_T4_v3  # T4 is 60% cheaper than V100
+  
+  estimated_monthly_cost_usd: 800-2000
+
+# =============================================================================
+# PRODUCTION - LOW LATENCY
+# =============================================================================
+# - Optimized for p99 latency
+# - Over-provisioned to handle spikes instantly
+# - Premium GPU SKU
+production_low_latency:
+  scale_settings:
+    type: target_utilization
+    min_instances: 4              # Over-provisioned
+    max_instances: 12
+    target_utilization_percentage: 50  # Scale early
+    polling_interval: 5           # Very fast polling
+    scale_down_delay_in_seconds: 600
+  
+  request_settings:
+    request_timeout_ms: 30000     # 30s hard limit
+    max_concurrent_requests_per_instance: 2  # Low concurrency for speed
+    max_queue_wait_ms: 5000       # Almost no queueing
+  
+  instance_type: Standard_NC24ads_A100_v4  # A100 for fastest inference
+  
+  estimated_monthly_cost_usd: 20000-50000
+
+# =============================================================================
+# BATCH PROCESSING
+# =============================================================================
+# - Optimized for async batch workloads
+# - Scale to zero between batches
+# - Maximum throughput during processing
+batch_processing:
+  scale_settings:
+    type: target_utilization
+    min_instances: 0              # Scale to zero when idle
+    max_instances: 10             # High burst for batch
+    target_utilization_percentage: 90  # Max utilization
+    polling_interval: 15
+    scale_down_delay_in_seconds: 180  # Quick scale down after batch
+  
+  request_settings:
+    request_timeout_ms: 300000    # 5 min - long timeout for batch
+    max_concurrent_requests_per_instance: 4
+    max_queue_wait_ms: 600000     # 10 min queue OK for batch
+  
+  instance_type: Standard_NC6s_v3
+  
+  estimated_monthly_cost_usd: varies  # Pay per batch run
+
+# =============================================================================
+# Recommended Settings by Traffic Pattern
+# =============================================================================
+#
+# | Traffic Pattern          | Profile                  | Key Setting            |
+# |--------------------------|--------------------------|------------------------|
+# | Occasional manual use    | development              | min_instances: 0       |
+# | Steady low traffic       | production_cost_optimized| T4 GPU, high util %    |
+# | Steady medium traffic    | production_standard      | min: 2, target: 65%    |
+# | Spiky/unpredictable      | production_standard      | min: 2, max: 8         |
+# | High volume API          | production_high_throughput| A100, min: 4          |
+# | Real-time SLA < 5s       | production_low_latency   | A100, target: 50%      |
+# | Nightly batch jobs       | batch_processing         | min: 0, max: 10        |
+#
+# =============================================================================
+# GPU Instance Comparison
+# =============================================================================
+#
+# | Instance Type              | GPU        | VRAM  | $/hr  | Throughput* |
+# |----------------------------|------------|-------|-------|-------------|
+# | Standard_NC4as_T4_v3       | 1x T4      | 16GB  | ~$0.50| 1x          |
+# | Standard_NC6s_v3           | 1x V100    | 16GB  | ~$3.00| 2x          |
+# | Standard_NC12s_v3          | 2x V100    | 32GB  | ~$6.00| 4x          |
+# | Standard_NC24ads_A100_v4   | 1x A100    | 80GB  | ~$4.50| 3x          |
+#
+# *Throughput relative to T4 for Nemotron Parse inference
+#
+# =============================================================================
+# Monitoring Recommendations
+# =============================================================================
+#
+# Set up alerts for:
+#   1. Request latency p95 > 30 seconds
+#   2. Queue depth > 10 requests
+#   3. Error rate > 1%
+#   4. GPU memory utilization > 90%
+#   5. Instance count at max for > 30 minutes
+#
+# Key metrics to track:
+#   - RequestLatency (ms)
+#   - RequestsInQueue
+#   - RequestsPerMinute
+#   - CpuUtilizationPercentage
+#   - MemoryUtilizationPercentage
+#   - GpuUtilizationPercentage
+#   - GpuMemoryUtilizationPercentage
+

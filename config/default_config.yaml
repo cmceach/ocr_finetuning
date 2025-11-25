@@ -1,7 +1,7 @@
 # Default Configuration Template for OCR Fine-Tuning Pipeline
 
-# Pipeline Mode: detection, recognition, or full (both)
-pipeline_mode: full  # Options: detection, recognition, full
+# Pipeline Mode: detection, recognition, full (both), or nemotron
+pipeline_mode: full  # Options: detection, recognition, full, nemotron
 
 # Training Backend
 training:
@@ -39,6 +39,34 @@ recognition:
   optimizer: adamw
   scheduler: cosine
   weight_decay: 0.0001
+
+# Nemotron Parse Configuration (VLM for document understanding)
+nemotron:
+  model_id: "nvidia/NVIDIA-Nemotron-Parse-v1.1"
+  trust_remote_code: true
+  use_lora: true              # Use LoRA for efficient finetuning
+  use_qlora: false            # Use 4-bit quantization (for limited GPU memory)
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_target_modules: null   # Auto-detect target modules
+  learning_rate: 2.0e-5
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  num_epochs: 3
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  max_length: 4096
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  use_flash_attention: true
+  eval_steps: 100
+  save_steps: 500
+  logging_steps: 10
+  early_stopping_patience: 3
+  save_total_limit: 3
+  save_full_model: false
 
 # Data Configuration
 data:

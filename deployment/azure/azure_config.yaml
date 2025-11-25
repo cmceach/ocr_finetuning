@@ -5,6 +5,7 @@ container_registry:
   name: your-registry-name
   resource_group: your-registry-resource-group
 
+# DocTR OCR Container Instance (CPU)
 container_instance:
   name: ocr-inference
   cpu: 2
@@ -12,10 +13,50 @@ container_instance:
   ports:
     - 8000
 
+# Nemotron Parse Container Instance (GPU)
+nemotron_container_instance:
+  name: nemotron-parse-inference
+  cpu: 4
+  memory_gb: 16
+  gpu_count: 1
+  gpu_sku: V100  # Options: K80, P100, V100, T4
+  ports:
+    - 8000
+
+# Azure ML Configuration for Nemotron Training
+azure_ml:
+  workspace_name: your-workspace
+  resource_group: your-ml-resource-group
+  compute_cluster: gpu-cluster  # Must have GPU (A100 or V100 recommended)
+  environment_name: nemotron-training
+  datastore_name: workspaceblobstore
+  
+  # Training data paths in blob storage
+  training_data:
+    train_path: nemotron/train_data
+    val_path: nemotron/val_data
+    model_output_path: nemotron/models
+
+# Azure ML Managed Endpoint Configuration
+azure_ml_endpoint:
+  name: nemotron-parse-endpoint
+  instance_type: Standard_NC6s_v3  # V100 16GB
+  instance_count: 1
+  request_timeout_ms: 90000
+  max_concurrent_requests: 4
+
 environment_variables:
   MODEL_VERSION: "1.0.0"
+
+# Nemotron-specific environment variables
+nemotron_environment_variables:
+  NEMOTRON_MODEL_ID: "nvidia/NVIDIA-Nemotron-Parse-v1.1"
+  USE_FLASH_ATTENTION: "true"
+  TORCH_DTYPE: "bfloat16"
+  TRANSFORMERS_CACHE: "/tmp/huggingface"
 
 secure_environment_variables:
   AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: null  # Set via environment
   AZURE_DOCUMENT_INTELLIGENCE_KEY: null  # Set via environment
+  HF_TOKEN: null  # HuggingFace token for gated models
 

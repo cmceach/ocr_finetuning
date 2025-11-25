@@ -1,0 +1,75 @@
+# Azure ML Training Job Definition for Nemotron Parse Finetuning
+# 
+# This job configuration is for finetuning Nemotron Parse on Azure ML
+# Requires GPU compute cluster (A100 recommended, V100 minimum)
+#
+# Usage:
+#   az ml job create --file deployment/azure/nemotron_ml_job.yaml --resource-group <rg> --workspace-name <ws>
+
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+
+display_name: nemotron-parse-finetuning
+description: Finetune NVIDIA Nemotron Parse v1.1 for document understanding
+
+experiment_name: nemotron-finetuning
+
+command: >
+  pip install transformers>=4.40.0 accelerate>=0.30.0 peft>=0.11.0 bitsandbytes>=0.43.0 sentencepiece>=0.2.0 &&
+  pip install flash-attn --no-build-isolation &&
+  python -m src.training.train_nemotron
+  --config training/configs/nemotron_config.yaml
+  --train-data ${{inputs.train_data}}/train.json
+  --val-data ${{inputs.val_data}}/val.json
+  --image-base-dir ${{inputs.train_data}}/images
+  --output-dir ${{outputs.model}}
+  --learning-rate 2e-5
+  --batch-size 4
+  --epochs 3
+
+code: .
+
+environment:
+  image: nvcr.io/nvidia/pytorch:24.01-py3
+  conda_file: deployment/azure/nemotron_conda_env.yaml
+
+compute: azureml:gpu-cluster  # Must be GPU cluster (A100/V100)
+
+resources:
+  instance_count: 1
+  shm_size: "16g"
+
+distribution:
+  type: pytorch
+  process_count_per_instance: 1
+
+inputs:
+  train_data:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/nemotron/train_data
+    mode: ro_mount
+  val_data:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/nemotron/val_data
+    mode: ro_mount
+
+outputs:
+  model:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/nemotron/models/${{name}}
+    mode: rw_mount
+
+environment_variables:
+  TRANSFORMERS_CACHE: /tmp/huggingface
+  HF_HOME: /tmp/huggingface
+  TORCH_HOME: /tmp/torch
+  NCCL_DEBUG: INFO
+  CUDA_VISIBLE_DEVICES: "0"
+
+limits:
+  timeout: 43200  # 12 hours
+
+tags:
+  model: nemotron-parse-v1.1
+  task: document-understanding
+  framework: pytorch
+

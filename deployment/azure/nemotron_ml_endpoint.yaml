@@ -1,0 +1,23 @@
+# Azure ML Managed Online Endpoint for Nemotron Parse
+#
+# This configuration deploys a finetuned Nemotron Parse model as a managed endpoint
+# Provides auto-scaling, load balancing, and blue-green deployments
+#
+# Usage:
+#   # Create endpoint
+#   az ml online-endpoint create --file deployment/azure/nemotron_ml_endpoint.yaml
+#   
+#   # Create deployment
+#   az ml online-deployment create --file deployment/azure/nemotron_ml_deployment.yaml
+
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json
+
+name: nemotron-parse-endpoint
+description: NVIDIA Nemotron Parse document understanding endpoint
+auth_mode: key
+
+tags:
+  model: nemotron-parse-v1.1
+  task: document-ocr
+  version: "1.0"
+
