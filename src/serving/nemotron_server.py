@@ -219,6 +219,9 @@ class NemotronModelManager:
 def parse_nemotron_output(raw_text: str) -> List[TextRegion]:
     """
     Parse Nemotron Parse output into structured regions.
+    
+    Supports both Nemotron Parse format (<x1><y1><x2><y2>text<class>)
+    and legacy format (<label><bbox>x1,y1,x2,y2</bbox>text</label>).
 
     Args:
         raw_text: Raw output from model
@@ -228,14 +231,14 @@ def parse_nemotron_output(raw_text: str) -> List[TextRegion]:
     """
     regions = []
 
-    # Pattern for structured output: <label><bbox>x1,y1,x2,y2</bbox>text</label>
-    pattern = r'<(\w+)><bbox>([\d.,]+)</bbox>(.*?)</\1>'
-    matches = re.findall(pattern, raw_text, re.DOTALL)
+    # Pattern for Nemotron Parse format: <x1><y1><x2><y2>text<class>
+    nemotron_pattern = r'<([\d.]+)><([\d.]+)><([\d.]+)><([\d.]+)>(.*?)<(\w+)>'
+    matches = re.findall(nemotron_pattern, raw_text, re.DOTALL)
 
     for match in matches:
-        label, bbox_str, text = match
+        x1, y1, x2, y2, text, label = match
         try:
-            bbox = [float(x.strip()) for x in bbox_str.split(",")]
+            bbox = [float(x1), float(y1), float(x2), float(y2)]
         except (ValueError, AttributeError):
             bbox = None
 
@@ -245,7 +248,25 @@ def parse_nemotron_output(raw_text: str) -> List[TextRegion]:
             label=label,
         ))
 
-    # If no structured output found, treat as plain text
+    # If no Nemotron format found, try legacy format
+    if not regions:
+        legacy_pattern = r'<(\w+)><bbox>([\d.,]+)</bbox>(.*?)</\1>'
+        legacy_matches = re.findall(legacy_pattern, raw_text, re.DOTALL)
+
+        for match in legacy_matches:
+            label, bbox_str, text = match
+            try:
+                bbox = [float(x.strip()) for x in bbox_str.split(",")]
+            except (ValueError, AttributeError):
+                bbox = None
+
+            regions.append(TextRegion(
+                text=text.strip(),
+                bbox=bbox,
+                label=label,
+            ))
+
+    # If still no structured output found, treat as plain text
     if not regions:
         # Try to extract text blocks separated by newlines
         lines = raw_text.strip().split("\n")

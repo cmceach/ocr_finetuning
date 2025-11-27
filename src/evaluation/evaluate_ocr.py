@@ -126,6 +126,9 @@ def evaluate_from_file(
 def parse_nemotron_output_for_eval(raw_text: str) -> List[Dict[str, Any]]:
     """
     Parse Nemotron Parse output into structured regions for evaluation.
+    
+    Supports both Nemotron Parse format (<x1><y1><x2><y2>text<class>)
+    and legacy format (<label><bbox>x1,y1,x2,y2</bbox>text</label>).
 
     Args:
         raw_text: Raw output from Nemotron Parse model
@@ -135,14 +138,15 @@ def parse_nemotron_output_for_eval(raw_text: str) -> List[Dict[str, Any]]:
     """
     regions = []
 
-    # Pattern for structured output: <label><bbox>x1,y1,x2,y2</bbox>text</label>
-    pattern = r'<(\w+)><bbox>([\d.,]+)</bbox>(.*?)</\1>'
-    matches = re.findall(pattern, raw_text, re.DOTALL)
+    # Pattern for Nemotron Parse format: <x1><y1><x2><y2>text<class>
+    # Coordinates are normalized floats, class is a word
+    nemotron_pattern = r'<([\d.]+)><([\d.]+)><([\d.]+)><([\d.]+)>(.*?)<(\w+)>'
+    matches = re.findall(nemotron_pattern, raw_text, re.DOTALL)
 
     for match in matches:
-        label, bbox_str, text = match
+        x1, y1, x2, y2, text, label = match
         try:
-            bbox = [float(x.strip()) for x in bbox_str.split(",")]
+            bbox = [float(x1), float(y1), float(x2), float(y2)]
         except (ValueError, AttributeError):
             bbox = None
 
@@ -152,7 +156,25 @@ def parse_nemotron_output_for_eval(raw_text: str) -> List[Dict[str, Any]]:
             "label": label,
         })
 
-    # If no structured output found, extract plain text
+    # If no Nemotron format found, try legacy format: <label><bbox>x1,y1,x2,y2</bbox>text</label>
+    if not regions:
+        legacy_pattern = r'<(\w+)><bbox>([\d.,]+)</bbox>(.*?)</\1>'
+        legacy_matches = re.findall(legacy_pattern, raw_text, re.DOTALL)
+        
+        for match in legacy_matches:
+            label, bbox_str, text = match
+            try:
+                bbox = [float(x.strip()) for x in bbox_str.split(",")]
+            except (ValueError, AttributeError):
+                bbox = None
+
+            regions.append({
+                "text": text.strip(),
+                "bbox": bbox,
+                "label": label,
+            })
+
+    # If still no structured output found, extract plain text
     if not regions:
         # Clean up special tokens and extract text blocks
         clean_text = re.sub(r'<[^>]+>', '', raw_text)

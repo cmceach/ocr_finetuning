@@ -20,6 +20,7 @@ from ..data.nemotron_converter import (
     NemotronDataset,
     NemotronDataCollator,
     load_nemotron_dataset,
+    validate_label_studio_conversion,
 )
 from .nemotron_model import (
     NEMOTRON_PARSE_MODEL_ID,
@@ -335,21 +336,58 @@ def train_nemotron_model(
     if train_data_path.endswith(".jsonl"):
         train_samples = converter.convert_from_jsonl(train_data_path)
     else:
-        train_samples = converter.convert_from_label_studio(train_data_path)
+        # Convert with validation enabled
+        train_samples = converter.convert_from_label_studio(
+            train_data_path,
+            validate=True
+        )
+        
+        # Validate Label Studio conversion
+        print("\nValidating Label Studio to Nemotron conversion for training data...")
+        validation_result = validate_label_studio_conversion(
+            train_samples,
+            max_samples_to_check=None,  # Check all samples
+            verbose=True
+        )
+        
+        # Warn if validation rate is low
+        if validation_result["validation_rate"] < 0.95:
+            print(f"\n⚠️  WARNING: Only {validation_result['validation_rate']:.1%} of training samples "
+                  f"passed validation. Please review the errors above.")
+        else:
+            print(f"\n✓ Conversion validation passed: {validation_result['validation_rate']:.1%} of samples valid")
 
     # Load or split validation data
     if val_data_path:
         if val_data_path.endswith(".jsonl"):
             val_samples = converter.convert_from_jsonl(val_data_path)
         else:
-            val_samples = converter.convert_from_label_studio(val_data_path)
+            # Convert with validation enabled
+            val_samples = converter.convert_from_label_studio(
+                val_data_path,
+                validate=True
+            )
+            
+            # Validate Label Studio conversion for validation data
+            print("\nValidating Label Studio to Nemotron conversion for validation data...")
+            val_validation_result = validate_label_studio_conversion(
+                val_samples,
+                max_samples_to_check=None,
+                verbose=True
+            )
+            
+            if val_validation_result["validation_rate"] < 0.95:
+                print(f"\n⚠️  WARNING: Only {val_validation_result['validation_rate']:.1%} of validation samples "
+                      f"passed validation.")
+            else:
+                print(f"\n✓ Conversion validation passed: {val_validation_result['validation_rate']:.1%} of samples valid")
     else:
         # Split training data
         from ..data.nemotron_converter import create_train_val_split
         val_ratio = config.get("data.val_split", 0.1)
         train_samples, val_samples = create_train_val_split(train_samples, val_ratio=val_ratio)
 
-    print(f"  Training samples: {len(train_samples)}")
+    print(f"\n  Training samples: {len(train_samples)}")
     print(f"  Validation samples: {len(val_samples)}")
 
     # Create datasets

@@ -131,17 +131,23 @@ def run(raw_data: str) -> str:
 
 
 def _parse_output(raw_text: str) -> List[Dict[str, Any]]:
-    """Parse Nemotron output into structured regions"""
+    """Parse Nemotron output into structured regions.
+    
+    Supports both Nemotron Parse format (<x1><y1><x2><y2>text<class>)
+    and legacy format (<label><bbox>x1,y1,x2,y2</bbox>text</label>).
+    """
     import re
 
     regions = []
-    pattern = r'<(\w+)><bbox>([\d.,]+)</bbox>(.*?)</\1>'
-    matches = re.findall(pattern, raw_text, re.DOTALL)
+    
+    # Pattern for Nemotron Parse format: <x1><y1><x2><y2>text<class>
+    nemotron_pattern = r'<([\d.]+)><([\d.]+)><([\d.]+)><([\d.]+)>(.*?)<(\w+)>'
+    matches = re.findall(nemotron_pattern, raw_text, re.DOTALL)
 
     for match in matches:
-        label, bbox_str, text = match
+        x1, y1, x2, y2, text, label = match
         try:
-            bbox = [float(x.strip()) for x in bbox_str.split(",")]
+            bbox = [float(x1), float(y1), float(x2), float(y2)]
         except (ValueError, AttributeError):
             bbox = None
 
@@ -150,6 +156,24 @@ def _parse_output(raw_text: str) -> List[Dict[str, Any]]:
             "bbox": bbox,
             "label": label,
         })
+
+    # If no Nemotron format found, try legacy format
+    if not regions:
+        legacy_pattern = r'<(\w+)><bbox>([\d.,]+)</bbox>(.*?)</\1>'
+        legacy_matches = re.findall(legacy_pattern, raw_text, re.DOTALL)
+
+        for match in legacy_matches:
+            label, bbox_str, text = match
+            try:
+                bbox = [float(x.strip()) for x in bbox_str.split(",")]
+            except (ValueError, AttributeError):
+                bbox = None
+
+            regions.append({
+                "text": text.strip(),
+                "bbox": bbox,
+                "label": label,
+            })
 
     # Fallback for plain text
     if not regions:

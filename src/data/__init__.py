@@ -9,6 +9,7 @@ from .nemotron_converter import (
     NemotronDataset,
     NemotronDataCollator,
     load_nemotron_dataset,
+    validate_label_studio_conversion,
 )
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "NemotronDataset",
     "NemotronDataCollator",
     "load_nemotron_dataset",
+    "validate_label_studio_conversion",
 ]
 
